@@ -13,18 +13,23 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { createTeam } from "@/actions/team-actions"
+import { useToast } from "@/hooks/use-toast"
 
 interface TeamCreationModalProps {
   isOpen: boolean
   onClose: () => void
+  onSuccess?: () => void
 }
 
-export function TeamCreationModal({ isOpen, onClose }: TeamCreationModalProps) {
+export function TeamCreationModal({ isOpen, onClose, onSuccess }: TeamCreationModalProps) {
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const { toast } = useToast()
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     // Validate form
     const newErrors: Record<string, string> = {}
 
@@ -36,15 +41,43 @@ export function TeamCreationModal({ isOpen, onClose }: TeamCreationModalProps) {
       return
     }
 
-    // Submit form
-    console.log({
-      name,
-      description,
-    })
+    setIsSubmitting(true)
 
-    // Reset form and close modal
-    resetForm()
-    onClose()
+    try {
+      const formData = new FormData()
+      formData.append("name", name)
+      formData.append("description", description)
+
+      const result = await createTeam(formData)
+
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: "Team created successfully",
+        })
+        resetForm()
+        if (onSuccess) {
+          onSuccess()
+        } else {
+          onClose()
+        }
+      } else {
+        toast({
+          title: "Error",
+          description: result.message || "Failed to create team",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("Error creating team:", error)
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const resetForm = () => {
@@ -93,11 +126,18 @@ export function TeamCreationModal({ isOpen, onClose }: TeamCreationModalProps) {
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={handleClose}>
+          <Button variant="outline" onClick={handleClose} disabled={isSubmitting}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} className="bg-[#1E90FF] hover:bg-blue-600">
-            Create Team
+          <Button onClick={handleSubmit} className="bg-[#1E90FF] hover:bg-blue-600" disabled={isSubmitting}>
+            {isSubmitting ? (
+              <>
+                <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                Creating...
+              </>
+            ) : (
+              "Create Team"
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

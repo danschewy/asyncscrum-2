@@ -14,21 +14,26 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { createCeremony } from "@/actions/ceremony-actions"
+import { useToast } from "@/hooks/use-toast"
 
 interface CeremonyCreationModalProps {
   isOpen: boolean
   onClose: () => void
+  onSuccess?: () => void
 }
 
-export function CeremonyCreationModal({ isOpen, onClose }: CeremonyCreationModalProps) {
+export function CeremonyCreationModal({ isOpen, onClose, onSuccess }: CeremonyCreationModalProps) {
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [duration, setDuration] = useState("")
   const [frequency, setFrequency] = useState("")
   const [color, setColor] = useState("")
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const { toast } = useToast()
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     // Validate form
     const newErrors: Record<string, string> = {}
 
@@ -44,18 +49,46 @@ export function CeremonyCreationModal({ isOpen, onClose }: CeremonyCreationModal
       return
     }
 
-    // Submit form
-    console.log({
-      name,
-      description,
-      duration: Number(duration),
-      frequency,
-      color,
-    })
+    setIsSubmitting(true)
 
-    // Reset form and close modal
-    resetForm()
-    onClose()
+    try {
+      const formData = new FormData()
+      formData.append("name", name)
+      formData.append("description", description)
+      formData.append("duration", duration)
+      formData.append("frequency", frequency)
+      formData.append("color", color)
+
+      const result = await createCeremony(formData)
+
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: "Ceremony created successfully",
+        })
+        resetForm()
+        if (onSuccess) {
+          onSuccess()
+        } else {
+          onClose()
+        }
+      } else {
+        toast({
+          title: "Error",
+          description: result.message || "Failed to create ceremony",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("Error creating ceremony:", error)
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const resetForm = () => {
@@ -158,11 +191,18 @@ export function CeremonyCreationModal({ isOpen, onClose }: CeremonyCreationModal
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={handleClose}>
+          <Button variant="outline" onClick={handleClose} disabled={isSubmitting}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} className="bg-[#1E90FF] hover:bg-blue-600">
-            Create Ceremony
+          <Button onClick={handleSubmit} className="bg-[#1E90FF] hover:bg-blue-600" disabled={isSubmitting}>
+            {isSubmitting ? (
+              <>
+                <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                Creating...
+              </>
+            ) : (
+              "Create Ceremony"
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

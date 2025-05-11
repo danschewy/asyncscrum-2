@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Calendar, Clock, Filter, Plus, Search, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -9,82 +9,87 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { PromptCreationModal } from "@/components/prompt-creation-modal"
 import { Progress } from "@/components/ui/progress"
+import { useToast } from "@/hooks/use-toast"
 
-// Sample data for the dashboard
-const promptCards = [
-  {
-    id: 1,
-    title: "Daily Standup",
-    deadline: "Apr 30, 2025, 9:00 AM",
-    responses: 3,
-    totalTeamMembers: 5,
-    status: "in-progress", // in-progress, near-deadline, overdue, complete
-    project: "Project Alpha",
-    ceremonyType: "Standup",
-  },
-  {
-    id: 2,
-    title: "Sprint 3 Retrospective",
-    deadline: "May 2, 2025, 2:00 PM",
-    responses: 4,
-    totalTeamMembers: 4,
-    status: "complete",
-    project: "Project Beta",
-    ceremonyType: "Retrospective",
-  },
-  {
-    id: 3,
-    title: "Sprint Planning",
-    deadline: "Apr 29, 2025, 10:00 AM",
-    responses: 1,
-    totalTeamMembers: 5,
-    status: "near-deadline",
-    project: "Project Alpha",
-    ceremonyType: "Planning",
-  },
-  {
-    id: 4,
-    title: "Backlog Refinement",
-    deadline: "Apr 28, 2025, 11:00 AM",
-    responses: 0,
-    totalTeamMembers: 5,
-    status: "overdue",
-    project: "Project Gamma",
-    ceremonyType: "Refinement",
-  },
-  {
-    id: 5,
-    title: "Team Health Check",
-    deadline: "May 5, 2025, 3:00 PM",
-    responses: 2,
-    totalTeamMembers: 5,
-    status: "in-progress",
-    project: "Project Beta",
-    ceremonyType: "Health Check",
-  },
-  {
-    id: 6,
-    title: "Sprint Demo",
-    deadline: "May 1, 2025, 1:00 PM",
-    responses: 3,
-    totalTeamMembers: 5,
-    status: "in-progress",
-    project: "Project Alpha",
-    ceremonyType: "Demo",
-  },
-]
-
-const projects = ["All Projects", "Project Alpha", "Project Beta", "Project Gamma"]
-const ceremonyTypes = ["All Ceremonies", "Standup", "Retrospective", "Planning", "Refinement", "Demo", "Health Check"]
+interface Prompt {
+  id: string
+  title: string
+  deadline: string
+  responses: number
+  totalTeamMembers: number
+  status: string
+  project: string
+  ceremonyType: string
+}
 
 export function ScrumMasterDashboard() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   const [projectFilter, setProjectFilter] = useState("All Projects")
   const [ceremonyFilter, setCeremonyFilter] = useState("All Ceremonies")
+  const [prompts, setPrompts] = useState<Prompt[]>([])
+  const [projects, setProjects] = useState<string[]>([])
+  const [ceremonyTypes, setCeremonyTypes] = useState<string[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const { toast } = useToast()
+
+  useEffect(() => {
+    fetchPrompts()
+    fetchProjects()
+    fetchCeremonyTypes()
+  }, [])
+
+  const fetchPrompts = async () => {
+    try {
+      setIsLoading(true)
+      const response = await fetch("/api/prompts")
+      if (!response.ok) {
+        throw new Error("Failed to fetch prompts")
+      }
+      const data = await response.json()
+      setPrompts(data)
+    } catch (error) {
+      console.error("Error fetching prompts:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load prompts. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const fetchProjects = async () => {
+    try {
+      const response = await fetch("/api/projects")
+      if (!response.ok) {
+        throw new Error("Failed to fetch projects")
+      }
+      const data = await response.json()
+      const projectNames = ["All Projects", ...data.map((project: any) => project.name)]
+      setProjects(projectNames)
+    } catch (error) {
+      console.error("Error fetching projects:", error)
+    }
+  }
+
+  const fetchCeremonyTypes = async () => {
+    try {
+      const response = await fetch("/api/ceremonies")
+      if (!response.ok) {
+        throw new Error("Failed to fetch ceremonies")
+      }
+      const data = await response.json()
+      const ceremonyNames = ["All Ceremonies", ...data.map((ceremony: any) => ceremony.name)]
+      setCeremonyTypes(ceremonyNames)
+    } catch (error) {
+      console.error("Error fetching ceremonies:", error)
+    }
+  }
 
   // Filter prompts based on search term and filters
-  const filteredPrompts = promptCards.filter((prompt) => {
+  const filteredPrompts = prompts.filter((prompt) => {
     const matchesSearch = prompt.title.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesProject = projectFilter === "All Projects" || prompt.project === projectFilter
     const matchesCeremony = ceremonyFilter === "All Ceremonies" || prompt.ceremonyType === ceremonyFilter
@@ -122,6 +127,11 @@ export function ScrumMasterDashboard() {
       default:
         return "bg-gray-500"
     }
+  }
+
+  const handlePromptCreated = () => {
+    fetchPrompts()
+    setIsModalOpen(false)
   }
 
   return (
@@ -190,55 +200,59 @@ export function ScrumMasterDashboard() {
           </div>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredPrompts.map((prompt) => (
-            <Card key={prompt.id} className="overflow-hidden">
-              <CardHeader className="pb-2">
-                <div className="flex justify-between">
-                  <Badge variant="outline" className="mb-2">
-                    {prompt.ceremonyType}
-                  </Badge>
-                  <Badge variant="outline" className={getStatusColor(prompt.status)}>
-                    {prompt.status === "complete"
-                      ? "Complete"
-                      : prompt.status === "in-progress"
-                        ? "In Progress"
-                        : prompt.status === "near-deadline"
-                          ? "Due Soon"
-                          : "Overdue"}
-                  </Badge>
-                </div>
-                <CardTitle className="text-lg">{prompt.title}</CardTitle>
-              </CardHeader>
-              <CardContent className="pb-2">
-                <div className="mb-4 flex items-center text-sm text-gray-500">
-                  <Clock className="mr-1 h-4 w-4" />
-                  <span>Due: {prompt.deadline}</span>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span>Responses</span>
-                    <span className="font-medium">
-                      {prompt.responses}/{prompt.totalTeamMembers}
-                    </span>
+        {isLoading ? (
+          <div className="flex h-40 items-center justify-center">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {filteredPrompts.map((prompt) => (
+              <Card key={prompt.id} className="overflow-hidden">
+                <CardHeader className="pb-2">
+                  <div className="flex justify-between">
+                    <Badge variant="outline">{prompt.ceremonyType}</Badge>
+                    <Badge variant="outline" className={getStatusColor(prompt.status)}>
+                      {prompt.status === "complete"
+                        ? "Complete"
+                        : prompt.status === "in-progress"
+                          ? "In Progress"
+                          : prompt.status === "near-deadline"
+                            ? "Due Soon"
+                            : "Overdue"}
+                    </Badge>
                   </div>
-                  <Progress
-                    value={(prompt.responses / prompt.totalTeamMembers) * 100}
-                    className="h-2"
-                    indicatorClassName={getProgressColor(prompt.status)}
-                  />
-                </div>
-              </CardContent>
-              <CardFooter>
-                <Button variant="outline" className="w-full" asChild>
-                  <a href={`/responses/${prompt.id}`}>View Responses</a>
-                </Button>
-              </CardFooter>
-            </Card>
-          ))}
-        </div>
+                  <CardTitle className="text-lg">{prompt.title}</CardTitle>
+                </CardHeader>
+                <CardContent className="pb-2">
+                  <div className="mb-4 flex items-center text-sm text-gray-500">
+                    <Clock className="mr-1 h-4 w-4" />
+                    <span>Due: {prompt.deadline}</span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span>Responses</span>
+                      <span className="font-medium">
+                        {prompt.responses}/{prompt.totalTeamMembers}
+                      </span>
+                    </div>
+                    <Progress
+                      value={(prompt.responses / prompt.totalTeamMembers) * 100}
+                      className="h-2"
+                      indicatorClassName={getProgressColor(prompt.status)}
+                    />
+                  </div>
+                </CardContent>
+                <CardFooter>
+                  <Button variant="outline" className="w-full" asChild>
+                    <a href={`/responses/${prompt.id}`}>View Responses</a>
+                  </Button>
+                </CardFooter>
+              </Card>
+            ))}
+          </div>
+        )}
 
-        {filteredPrompts.length === 0 && (
+        {!isLoading && filteredPrompts.length === 0 && (
           <div className="mt-8 flex flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center">
             <div className="rounded-full bg-gray-100 p-3">
               <Search className="h-6 w-6 text-gray-400" />
@@ -266,7 +280,7 @@ export function ScrumMasterDashboard() {
         )}
       </div>
 
-      <PromptCreationModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+      <PromptCreationModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSuccess={handlePromptCreated} />
     </>
   )
 }

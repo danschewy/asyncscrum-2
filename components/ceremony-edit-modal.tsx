@@ -14,28 +14,33 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { updateCeremony } from "@/actions/ceremony-actions"
+import { useToast } from "@/hooks/use-toast"
 
 interface CeremonyEditModalProps {
   isOpen: boolean
   onClose: () => void
-  ceremonyId: number | null
+  ceremonyId: string | null
   ceremony?: {
-    id: number
+    id: string
     name: string
     description: string
     duration: number
     frequency: string
     color: string
   }
+  onSuccess?: () => void
 }
 
-export function CeremonyEditModal({ isOpen, onClose, ceremonyId, ceremony }: CeremonyEditModalProps) {
+export function CeremonyEditModal({ isOpen, onClose, ceremonyId, ceremony, onSuccess }: CeremonyEditModalProps) {
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [duration, setDuration] = useState("")
   const [frequency, setFrequency] = useState("")
   const [color, setColor] = useState("")
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const { toast } = useToast()
 
   useEffect(() => {
     if (ceremony) {
@@ -47,7 +52,7 @@ export function CeremonyEditModal({ isOpen, onClose, ceremonyId, ceremony }: Cer
     }
   }, [ceremony])
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     // Validate form
     const newErrors: Record<string, string> = {}
 
@@ -63,18 +68,55 @@ export function CeremonyEditModal({ isOpen, onClose, ceremonyId, ceremony }: Cer
       return
     }
 
-    // Submit form
-    console.log({
-      id: ceremonyId,
-      name,
-      description,
-      duration: Number(duration),
-      frequency,
-      color,
-    })
+    if (!ceremonyId) {
+      toast({
+        title: "Error",
+        description: "Ceremony ID is missing",
+        variant: "destructive",
+      })
+      return
+    }
 
-    // Reset form and close modal
-    onClose()
+    setIsSubmitting(true)
+
+    try {
+      const formData = new FormData()
+      formData.append("id", ceremonyId)
+      formData.append("name", name)
+      formData.append("description", description)
+      formData.append("duration", duration)
+      formData.append("frequency", frequency)
+      formData.append("color", color)
+
+      const result = await updateCeremony(formData)
+
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: "Ceremony updated successfully",
+        })
+        if (onSuccess) {
+          onSuccess()
+        } else {
+          onClose()
+        }
+      } else {
+        toast({
+          title: "Error",
+          description: result.message || "Failed to update ceremony",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("Error updating ceremony:", error)
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const handleClose = () => {
@@ -167,11 +209,18 @@ export function CeremonyEditModal({ isOpen, onClose, ceremonyId, ceremony }: Cer
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={handleClose}>
+          <Button variant="outline" onClick={handleClose} disabled={isSubmitting}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} className="bg-[#1E90FF] hover:bg-blue-600">
-            Save Changes
+          <Button onClick={handleSubmit} className="bg-[#1E90FF] hover:bg-blue-600" disabled={isSubmitting}>
+            {isSubmitting ? (
+              <>
+                <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                Saving...
+              </>
+            ) : (
+              "Save Changes"
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

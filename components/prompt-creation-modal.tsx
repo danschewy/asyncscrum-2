@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Calendar, Clock, Upload, Users, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -18,27 +18,26 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Progress } from "@/components/ui/progress"
+import { createPrompt } from "@/actions/prompt-actions"
+import { useToast } from "@/hooks/use-toast"
 
 interface PromptCreationModalProps {
   isOpen: boolean
   onClose: () => void
+  onSuccess?: () => void
 }
 
-const teams = [
-  { id: 1, name: "Team Alpha" },
-  { id: 2, name: "Team Beta" },
-  { id: 3, name: "Team Gamma" },
-]
+interface Team {
+  id: string
+  name: string
+}
 
-const ceremonyTypes = [
-  { id: 1, name: "Daily Standup" },
-  { id: 2, name: "Sprint Planning" },
-  { id: 3, name: "Sprint Review" },
-  { id: 4, name: "Sprint Retrospective" },
-  { id: 5, name: "Backlog Refinement" },
-]
+interface CeremonyType {
+  id: string
+  name: string
+}
 
-export function PromptCreationModal({ isOpen, onClose }: PromptCreationModalProps) {
+export function PromptCreationModal({ isOpen, onClose, onSuccess }: PromptCreationModalProps) {
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
   const [team, setTeam] = useState("")
@@ -49,6 +48,53 @@ export function PromptCreationModal({ isOpen, onClose }: PromptCreationModalProp
   const [uploadProgress, setUploadProgress] = useState(0)
   const [isUploading, setIsUploading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [teams, setTeams] = useState<Team[]>([])
+  const [ceremonyTypes, setCeremonyTypes] = useState<CeremonyType[]>([])
+  const { toast } = useToast()
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchTeams()
+      fetchCeremonyTypes()
+    }
+  }, [isOpen])
+
+  const fetchTeams = async () => {
+    try {
+      const response = await fetch("/api/teams")
+      if (!response.ok) {
+        throw new Error("Failed to fetch teams")
+      }
+      const data = await response.json()
+      setTeams(data.map((team: any) => ({ id: team.id, name: team.name })))
+    } catch (error) {
+      console.error("Error fetching teams:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load teams. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const fetchCeremonyTypes = async () => {
+    try {
+      const response = await fetch("/api/ceremonies")
+      if (!response.ok) {
+        throw new Error("Failed to fetch ceremonies")
+      }
+      const data = await response.json()
+      setCeremonyTypes(data.map((ceremony: any) => ({ id: ceremony.id, name: ceremony.name })))
+    } catch (error) {
+      console.error("Error fetching ceremonies:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load ceremony types. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault()
@@ -98,7 +144,7 @@ export function PromptCreationModal({ isOpen, onClose }: PromptCreationModalProp
     }, 300)
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     // Validate form
     const newErrors: Record<string, string> = {}
 
@@ -114,20 +160,58 @@ export function PromptCreationModal({ isOpen, onClose }: PromptCreationModalProp
       return
     }
 
-    // Submit form
-    console.log({
-      title,
-      description,
-      team,
-      ceremonyType,
-      date,
-      time,
-      videoFile,
-    })
+    setIsSubmitting(true)
 
-    // Reset form and close modal
-    resetForm()
-    onClose()
+    try {
+      // In a real app, you would upload the video file to a storage service
+      // and get a URL to store in the database
+      let videoUrl = null
+      if (videoFile) {
+        // This is a placeholder for video upload logic
+        videoUrl = URL.createObjectURL(videoFile)
+      }
+
+      const formData = new FormData()
+      formData.append("title", title)
+      formData.append("description", description)
+      formData.append("team", team)
+      formData.append("ceremonyType", ceremonyType)
+      formData.append("date", date)
+      formData.append("time", time)
+      if (videoUrl) {
+        formData.append("videoUrl", videoUrl)
+      }
+
+      const result = await createPrompt(formData)
+
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: "Prompt created successfully",
+        })
+        resetForm()
+        if (onSuccess) {
+          onSuccess()
+        } else {
+          onClose()
+        }
+      } else {
+        toast({
+          title: "Error",
+          description: result.message || "Failed to create prompt",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("Error creating prompt:", error)
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const resetForm = () => {
@@ -190,7 +274,7 @@ export function PromptCreationModal({ isOpen, onClose }: PromptCreationModalProp
                 </SelectTrigger>
                 <SelectContent>
                   {ceremonyTypes.map((type) => (
-                    <SelectItem key={type.id} value={type.name}>
+                    <SelectItem key={type.id} value={type.id}>
                       {type.name}
                     </SelectItem>
                   ))}
@@ -208,7 +292,7 @@ export function PromptCreationModal({ isOpen, onClose }: PromptCreationModalProp
                 </SelectTrigger>
                 <SelectContent>
                   {teams.map((team) => (
-                    <SelectItem key={team.id} value={team.name}>
+                    <SelectItem key={team.id} value={team.id}>
                       {team.name}
                     </SelectItem>
                   ))}
@@ -301,11 +385,22 @@ export function PromptCreationModal({ isOpen, onClose }: PromptCreationModalProp
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={handleClose}>
+          <Button variant="outline" onClick={handleClose} disabled={isSubmitting}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} className="bg-[#1E90FF] hover:bg-blue-600" disabled={isUploading}>
-            Create Prompt
+          <Button
+            onClick={handleSubmit}
+            className="bg-[#1E90FF] hover:bg-blue-600"
+            disabled={isSubmitting || isUploading}
+          >
+            {isSubmitting ? (
+              <>
+                <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                Creating...
+              </>
+            ) : (
+              "Create Prompt"
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

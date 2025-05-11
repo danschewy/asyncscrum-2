@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { ArrowLeft, MessageSquare, Send } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,106 +10,158 @@ import { Textarea } from "@/components/ui/textarea"
 import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import Link from "next/link"
+import { sendFeedback } from "@/actions/prompt-actions"
+import { useToast } from "@/hooks/use-toast"
 
 interface ResponseViewPageProps {
   promptId: string
 }
 
-// Sample data for the responses
-const promptData = {
-  id: "1",
-  title: "Daily Standup",
-  description:
-    "Please share what you worked on yesterday, what you plan to work on today, and any blockers you're facing.",
-  deadline: "Apr 30, 2025, 9:00 AM",
-  responses: 3,
-  totalTeamMembers: 5,
-  status: "in-progress",
-  project: "Project Alpha",
-  ceremonyType: "Standup",
-  videoUrl: null,
+interface TeamMember {
+  id: string
+  name: string
+  role: string
+  avatar?: string
+  hasResponded: boolean
+  responseTime: string | null
+  response: string | null
+  videoResponse: string | null
 }
 
-const teamMembers = [
-  {
-    id: 1,
-    name: "Alex Johnson",
-    avatar: "/placeholder.svg?height=40&width=40",
-    role: "Frontend Developer",
-    hasResponded: true,
-    responseTime: "Apr 29, 2025, 2:15 PM",
-    response:
-      "Yesterday: Completed the navigation component and fixed 3 UI bugs.\n\nToday: Working on the dashboard charts and starting the filter component.\n\nBlockers: None at the moment.",
-    videoResponse: null,
-  },
-  {
-    id: 2,
-    name: "Jamie Smith",
-    avatar: "/placeholder.svg?height=40&width=40",
-    role: "Backend Developer",
-    hasResponded: true,
-    responseTime: "Apr 29, 2025, 3:30 PM",
-    response:
-      "Yesterday: Implemented the authentication API and wrote tests.\n\nToday: Working on the data export functionality and reviewing PRs.\n\nBlockers: Waiting for DevOps to set up the new database instance.",
-    videoResponse: null,
-  },
-  {
-    id: 3,
-    name: "Taylor Wilson",
-    avatar: "/placeholder.svg?height=40&width=40",
-    role: "UX Designer",
-    hasResponded: true,
-    responseTime: "Apr 29, 2025, 4:45 PM",
-    response:
-      "Yesterday: Finalized the design system components and presented to stakeholders.\n\nToday: Creating user flows for the new onboarding process.\n\nBlockers: Need feedback from product on the latest wireframes.",
-    videoResponse: null,
-  },
-  {
-    id: 4,
-    name: "Morgan Lee",
-    avatar: "/placeholder.svg?height=40&width=40",
-    role: "QA Engineer",
-    hasResponded: false,
-    responseTime: null,
-    response: null,
-    videoResponse: null,
-  },
-  {
-    id: 5,
-    name: "Casey Brown",
-    avatar: "/placeholder.svg?height=40&width=40",
-    role: "Product Manager",
-    hasResponded: false,
-    responseTime: null,
-    response: null,
-    videoResponse: null,
-  },
-]
+interface PromptData {
+  id: string
+  title: string
+  description: string
+  deadline: string
+  responses: number
+  totalTeamMembers: number
+  status: string
+  project: string
+  ceremonyType: string
+  videoUrl: string | null
+  teamMembers: TeamMember[]
+}
 
 export function ResponseViewPage({ promptId }: ResponseViewPageProps) {
   const [activeTab, setActiveTab] = useState("all")
-  const [feedbackText, setFeedbackText] = useState<Record<number, string>>({})
+  const [feedbackText, setFeedbackText] = useState<Record<string, string>>({})
+  const [promptData, setPromptData] = useState<PromptData | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSendingFeedback, setIsSendingFeedback] = useState<Record<string, boolean>>({})
+  const { toast } = useToast()
 
-  // Filter responses based on active tab
-  const filteredMembers = teamMembers.filter((member) => {
-    if (activeTab === "all") return true
-    if (activeTab === "responded") return member.hasResponded
-    if (activeTab === "pending") return !member.hasResponded
-    return true
-  })
+  useEffect(() => {
+    fetchPromptData()
+  }, [promptId])
 
-  const handleSendReminder = (memberId: number) => {
-    console.log(`Sending reminder to member ${memberId}`)
-    // In a real app, this would trigger a Slack notification
+  const fetchPromptData = async () => {
+    try {
+      setIsLoading(true)
+      const response = await fetch(`/api/prompts/${promptId}`)
+      if (!response.ok) {
+        throw new Error("Failed to fetch prompt data")
+      }
+      const data = await response.json()
+      setPromptData(data)
+    } catch (error) {
+      console.error("Error fetching prompt data:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load prompt data. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  const handleSendFeedback = (memberId: number) => {
-    console.log(`Sending feedback to member ${memberId}: ${feedbackText[memberId]}`)
-    setFeedbackText((prev) => ({
-      ...prev,
-      [memberId]: "",
-    }))
-    // In a real app, this would save the feedback and notify the team member
+  // Filter responses based on active tab
+  const filteredMembers =
+    promptData?.teamMembers.filter((member) => {
+      if (activeTab === "all") return true
+      if (activeTab === "responded") return member.hasResponded
+      if (activeTab === "pending") return !member.hasResponded
+      return true
+    }) || []
+
+  const handleSendReminder = async (memberId: string) => {
+    // In a real app, this would trigger a notification to the team member
+    toast({
+      title: "Reminder Sent",
+      description: "A reminder has been sent to the team member.",
+    })
+  }
+
+  const handleSendFeedback = async (memberId: string) => {
+    if (!feedbackText[memberId]?.trim()) return
+
+    setIsSendingFeedback((prev) => ({ ...prev, [memberId]: true }))
+
+    try {
+      // Find the response ID for this member
+      const member = promptData?.teamMembers.find((m) => m.id === memberId)
+      if (!member || !member.hasResponded) {
+        throw new Error("Cannot send feedback to a member who hasn't responded")
+      }
+
+      // In a real app, you would get the response ID from the member's response
+      // For now, we'll use a placeholder
+      const responseId = `response-${memberId}-${promptId}`
+
+      const formData = new FormData()
+      formData.append("responseId", responseId)
+      formData.append("text", feedbackText[memberId])
+
+      const result = await sendFeedback(formData)
+
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: "Feedback sent successfully",
+        })
+        setFeedbackText((prev) => ({
+          ...prev,
+          [memberId]: "",
+        }))
+      } else {
+        toast({
+          title: "Error",
+          description: result.message || "Failed to send feedback",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("Error sending feedback:", error)
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSendingFeedback((prev) => ({ ...prev, [memberId]: false }))
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex h-40 items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
+      </div>
+    )
+  }
+
+  if (!promptData) {
+    return (
+      <div className="p-4 md:p-6">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-800">
+          <h3 className="text-lg font-medium">Prompt not found</h3>
+          <p className="mt-2">The prompt you're looking for doesn't exist or you don't have access to it.</p>
+          <Button variant="outline" className="mt-4" asChild>
+            <Link href="/dashboard">Return to Dashboard</Link>
+          </Button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -160,11 +212,13 @@ export function ResponseViewPage({ promptId }: ResponseViewPageProps) {
         <Tabs defaultValue="all" value={activeTab} onValueChange={setActiveTab}>
           <div className="flex items-center justify-between">
             <TabsList>
-              <TabsTrigger value="all">All ({teamMembers.length})</TabsTrigger>
+              <TabsTrigger value="all">All ({promptData.teamMembers.length})</TabsTrigger>
               <TabsTrigger value="responded">
-                Responded ({teamMembers.filter((m) => m.hasResponded).length})
+                Responded ({promptData.teamMembers.filter((m) => m.hasResponded).length})
               </TabsTrigger>
-              <TabsTrigger value="pending">Pending ({teamMembers.filter((m) => !m.hasResponded).length})</TabsTrigger>
+              <TabsTrigger value="pending">
+                Pending ({promptData.teamMembers.filter((m) => !m.hasResponded).length})
+              </TabsTrigger>
             </TabsList>
           </div>
 
@@ -178,6 +232,7 @@ export function ResponseViewPage({ promptId }: ResponseViewPageProps) {
                   onFeedbackChange={(text) => setFeedbackText((prev) => ({ ...prev, [member.id]: text }))}
                   onSendReminder={() => handleSendReminder(member.id)}
                   onSendFeedback={() => handleSendFeedback(member.id)}
+                  isSendingFeedback={isSendingFeedback[member.id] || false}
                 />
               ))}
             </div>
@@ -193,6 +248,7 @@ export function ResponseViewPage({ promptId }: ResponseViewPageProps) {
                   onFeedbackChange={(text) => setFeedbackText((prev) => ({ ...prev, [member.id]: text }))}
                   onSendReminder={() => handleSendReminder(member.id)}
                   onSendFeedback={() => handleSendFeedback(member.id)}
+                  isSendingFeedback={isSendingFeedback[member.id] || false}
                 />
               ))}
             </div>
@@ -208,6 +264,7 @@ export function ResponseViewPage({ promptId }: ResponseViewPageProps) {
                   onFeedbackChange={(text) => setFeedbackText((prev) => ({ ...prev, [member.id]: text }))}
                   onSendReminder={() => handleSendReminder(member.id)}
                   onSendFeedback={() => handleSendFeedback(member.id)}
+                  isSendingFeedback={isSendingFeedback[member.id] || false}
                 />
               ))}
             </div>
@@ -219,14 +276,22 @@ export function ResponseViewPage({ promptId }: ResponseViewPageProps) {
 }
 
 interface ResponseCardProps {
-  member: (typeof teamMembers)[0]
+  member: TeamMember
   feedbackText: string
   onFeedbackChange: (text: string) => void
   onSendReminder: () => void
   onSendFeedback: () => void
+  isSendingFeedback: boolean
 }
 
-function ResponseCard({ member, feedbackText, onFeedbackChange, onSendReminder, onSendFeedback }: ResponseCardProps) {
+function ResponseCard({
+  member,
+  feedbackText,
+  onFeedbackChange,
+  onSendReminder,
+  onSendFeedback,
+  isSendingFeedback,
+}: ResponseCardProps) {
   const [showFeedback, setShowFeedback] = useState(false)
 
   return (
@@ -235,7 +300,7 @@ function ResponseCard({ member, feedbackText, onFeedbackChange, onSendReminder, 
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Avatar>
-              <AvatarImage src={member.avatar || "/placeholder.svg"} alt={member.name} />
+              <AvatarImage src={member.avatar || "/placeholder.svg?height=40&width=40"} alt={member.name} />
               <AvatarFallback>
                 {member.name
                   .split(" ")
@@ -317,11 +382,20 @@ function ResponseCard({ member, feedbackText, onFeedbackChange, onSendReminder, 
               <Button
                 size="sm"
                 className="bg-[#1E90FF] hover:bg-blue-600"
-                disabled={!feedbackText.trim()}
+                disabled={!feedbackText.trim() || isSendingFeedback}
                 onClick={onSendFeedback}
               >
-                <Send className="mr-2 h-4 w-4" />
-                Send Feedback
+                {isSendingFeedback ? (
+                  <>
+                    <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Send className="mr-2 h-4 w-4" />
+                    Send Feedback
+                  </>
+                )}
               </Button>
             )}
           </>

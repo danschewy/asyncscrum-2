@@ -13,19 +13,24 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { inviteUserToTeam } from "@/actions/team-actions"
+import { useToast } from "@/hooks/use-toast"
 
 interface InviteUserModalProps {
   isOpen: boolean
   onClose: () => void
-  teamId: number | null
+  teamId: string | null
+  onSuccess?: () => void
 }
 
-export function InviteUserModal({ isOpen, onClose, teamId }: InviteUserModalProps) {
+export function InviteUserModal({ isOpen, onClose, teamId, onSuccess }: InviteUserModalProps) {
   const [email, setEmail] = useState("")
   const [role, setRole] = useState("")
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const { toast } = useToast()
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     // Validate form
     const newErrors: Record<string, string> = {}
 
@@ -39,16 +44,53 @@ export function InviteUserModal({ isOpen, onClose, teamId }: InviteUserModalProp
       return
     }
 
-    // Submit form
-    console.log({
-      teamId,
-      email,
-      role,
-    })
+    if (!teamId) {
+      toast({
+        title: "Error",
+        description: "Team ID is missing",
+        variant: "destructive",
+      })
+      return
+    }
 
-    // Reset form and close modal
-    resetForm()
-    onClose()
+    setIsSubmitting(true)
+
+    try {
+      const formData = new FormData()
+      formData.append("teamId", teamId)
+      formData.append("email", email)
+      formData.append("role", role)
+
+      const result = await inviteUserToTeam(formData)
+
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: "User invited successfully",
+        })
+        resetForm()
+        if (onSuccess) {
+          onSuccess()
+        } else {
+          onClose()
+        }
+      } else {
+        toast({
+          title: "Error",
+          description: result.message || "Failed to invite user",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("Error inviting user:", error)
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const resetForm = () => {
@@ -103,11 +145,18 @@ export function InviteUserModal({ isOpen, onClose, teamId }: InviteUserModalProp
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={handleClose}>
+          <Button variant="outline" onClick={handleClose} disabled={isSubmitting}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} className="bg-[#1E90FF] hover:bg-blue-600">
-            Send Invitation
+          <Button onClick={handleSubmit} className="bg-[#1E90FF] hover:bg-blue-600" disabled={isSubmitting}>
+            {isSubmitting ? (
+              <>
+                <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                Sending...
+              </>
+            ) : (
+              "Send Invitation"
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

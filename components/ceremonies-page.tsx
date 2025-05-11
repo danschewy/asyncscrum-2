@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Clock, Edit, MoreHorizontal, Plus, Search, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -26,96 +26,105 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { deleteCeremony } from "@/actions/ceremony-actions"
+import { useToast } from "@/hooks/use-toast"
 
-// Sample data for ceremonies
-const ceremoniesData = [
-  {
-    id: 1,
-    name: "Daily Standup",
-    description:
-      "A short daily meeting where team members share what they did yesterday, what they plan to do today, and any blockers they're facing.",
-    duration: 15,
-    frequency: "Daily",
-    color: "blue",
-    promptCount: 24,
-  },
-  {
-    id: 2,
-    name: "Sprint Planning",
-    description:
-      "A meeting at the beginning of each sprint where the team decides what work to complete in the upcoming sprint.",
-    duration: 120,
-    frequency: "Every 2 weeks",
-    color: "green",
-    promptCount: 6,
-  },
-  {
-    id: 3,
-    name: "Sprint Review",
-    description:
-      "A meeting at the end of each sprint where the team demonstrates what they've accomplished during the sprint.",
-    duration: 60,
-    frequency: "Every 2 weeks",
-    color: "purple",
-    promptCount: 6,
-  },
-  {
-    id: 4,
-    name: "Sprint Retrospective",
-    description:
-      "A meeting at the end of each sprint where the team reflects on what went well, what could be improved, and what actions to take.",
-    duration: 60,
-    frequency: "Every 2 weeks",
-    color: "orange",
-    promptCount: 6,
-  },
-  {
-    id: 5,
-    name: "Backlog Refinement",
-    description:
-      "A meeting where the team reviews and refines the product backlog to ensure the backlog items are ready for future sprints.",
-    duration: 60,
-    frequency: "Weekly",
-    color: "yellow",
-    promptCount: 12,
-  },
-  {
-    id: 6,
-    name: "Team Health Check",
-    description:
-      "A meeting to assess the team's health and identify areas for improvement in team dynamics and processes.",
-    duration: 30,
-    frequency: "Monthly",
-    color: "red",
-    promptCount: 3,
-  },
-]
+interface Ceremony {
+  id: string
+  name: string
+  description: string
+  duration: number
+  frequency: string
+  color: string
+  promptCount: number
+}
 
 export function CeremoniesPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
-  const [selectedCeremony, setSelectedCeremony] = useState<number | null>(null)
+  const [selectedCeremony, setSelectedCeremony] = useState<string | null>(null)
+  const [ceremonies, setCeremonies] = useState<Ceremony[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const { toast } = useToast()
+
+  useEffect(() => {
+    fetchCeremonies()
+  }, [])
+
+  const fetchCeremonies = async () => {
+    try {
+      setIsLoading(true)
+      const response = await fetch("/api/ceremonies")
+      if (!response.ok) {
+        throw new Error("Failed to fetch ceremonies")
+      }
+      const data = await response.json()
+      setCeremonies(data)
+    } catch (error) {
+      console.error("Error fetching ceremonies:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load ceremonies. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   // Filter ceremonies based on search term
-  const filteredCeremonies = ceremoniesData.filter((ceremony) => {
+  const filteredCeremonies = ceremonies.filter((ceremony) => {
     return ceremony.name.toLowerCase().includes(searchTerm.toLowerCase())
   })
 
-  const handleEditCeremony = (ceremonyId: number) => {
+  const handleEditCeremony = (ceremonyId: string) => {
     setSelectedCeremony(ceremonyId)
     setIsEditModalOpen(true)
   }
 
-  const handleDeleteCeremony = (ceremonyId: number) => {
+  const handleDeleteCeremony = (ceremonyId: string) => {
     setSelectedCeremony(ceremonyId)
     setIsDeleteDialogOpen(true)
   }
 
-  const confirmDelete = () => {
-    console.log(`Deleting ceremony ${selectedCeremony}`)
-    setIsDeleteDialogOpen(false)
+  const confirmDelete = async () => {
+    if (!selectedCeremony) return
+
+    setIsDeleting(true)
+
+    try {
+      const formData = new FormData()
+      formData.append("id", selectedCeremony)
+
+      const result = await deleteCeremony(formData)
+
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: "Ceremony deleted successfully",
+        })
+        fetchCeremonies()
+      } else {
+        toast({
+          title: "Error",
+          description: result.message || "Failed to delete ceremony",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("Error deleting ceremony:", error)
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsDeleting(false)
+      setIsDeleteDialogOpen(false)
+    }
   }
 
   // Get color class based on ceremony color
@@ -136,6 +145,16 @@ export function CeremoniesPage() {
       default:
         return "bg-gray-100 text-gray-800 border-gray-300"
     }
+  }
+
+  const handleCeremonyCreated = () => {
+    fetchCeremonies()
+    setIsCreateModalOpen(false)
+  }
+
+  const handleCeremonyUpdated = () => {
+    fetchCeremonies()
+    setIsEditModalOpen(false)
   }
 
   return (
@@ -174,57 +193,63 @@ export function CeremoniesPage() {
           </div>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredCeremonies.map((ceremony) => (
-            <Card key={ceremony.id} className="overflow-hidden">
-              <CardHeader className="pb-2">
-                <div className="flex justify-between">
-                  <Badge variant="outline" className={getColorClass(ceremony.color)}>
-                    {ceremony.frequency}
-                  </Badge>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => handleEditCeremony(ceremony.id)}>
-                        <Edit className="mr-2 h-4 w-4" />
-                        Edit Ceremony
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleDeleteCeremony(ceremony.id)} className="text-red-600">
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete Ceremony
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-                <CardTitle className="text-lg">{ceremony.name}</CardTitle>
-              </CardHeader>
-              <CardContent className="pb-2">
-                <p className="mb-4 text-sm text-gray-500 line-clamp-3">{ceremony.description}</p>
-
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <Clock className="mr-1 h-4 w-4 text-gray-400" />
-                    <span className="text-sm text-gray-500">{ceremony.duration} minutes</span>
+        {isLoading ? (
+          <div className="flex h-40 items-center justify-center">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {filteredCeremonies.map((ceremony) => (
+              <Card key={ceremony.id} className="overflow-hidden">
+                <CardHeader className="pb-2">
+                  <div className="flex justify-between">
+                    <Badge variant="outline" className={getColorClass(ceremony.color)}>
+                      {ceremony.frequency}
+                    </Badge>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => handleEditCeremony(ceremony.id)}>
+                          <Edit className="mr-2 h-4 w-4" />
+                          Edit Ceremony
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleDeleteCeremony(ceremony.id)} className="text-red-600">
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete Ceremony
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
-                  <span className="text-sm text-gray-500">{ceremony.promptCount} prompts</span>
-                </div>
-              </CardContent>
-              <CardFooter>
-                <Button variant="outline" className="w-full" asChild>
-                  <a href={`/ceremonies/${ceremony.id}`}>View Templates</a>
-                </Button>
-              </CardFooter>
-            </Card>
-          ))}
-        </div>
+                  <CardTitle className="text-lg">{ceremony.name}</CardTitle>
+                </CardHeader>
+                <CardContent className="pb-2">
+                  <p className="mb-4 text-sm text-gray-500 line-clamp-3">{ceremony.description}</p>
 
-        {filteredCeremonies.length === 0 && (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      <Clock className="mr-1 h-4 w-4 text-gray-400" />
+                      <span className="text-sm text-gray-500">{ceremony.duration} minutes</span>
+                    </div>
+                    <span className="text-sm text-gray-500">{ceremony.promptCount} prompts</span>
+                  </div>
+                </CardContent>
+                <CardFooter>
+                  <Button variant="outline" className="w-full" asChild>
+                    <a href={`/ceremonies/${ceremony.id}`}>View Templates</a>
+                  </Button>
+                </CardFooter>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {!isLoading && filteredCeremonies.length === 0 && (
           <div className="mt-8 flex flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center">
             <div className="rounded-full bg-gray-100 p-3">
               <Search className="h-6 w-6 text-gray-400" />
@@ -242,12 +267,17 @@ export function CeremoniesPage() {
         )}
       </div>
 
-      <CeremonyCreationModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} />
+      <CeremonyCreationModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onSuccess={handleCeremonyCreated}
+      />
       <CeremonyEditModal
         isOpen={isEditModalOpen}
         onClose={() => setIsEditModalOpen(false)}
         ceremonyId={selectedCeremony}
-        ceremony={selectedCeremony ? ceremoniesData.find((c) => c.id === selectedCeremony) : undefined}
+        ceremony={selectedCeremony ? ceremonies.find((c) => c.id === selectedCeremony) : undefined}
+        onSuccess={handleCeremonyUpdated}
       />
 
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
@@ -259,9 +289,16 @@ export function CeremoniesPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} className="bg-red-600 hover:bg-red-700">
-              Delete
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete} className="bg-red-600 hover:bg-red-700" disabled={isDeleting}>
+              {isDeleting ? (
+                <>
+                  <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
